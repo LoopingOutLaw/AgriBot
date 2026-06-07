@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.joblib
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Gazebo/ROS
+*.bag
+*.active
+*.sdf.bak*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+mission_reports/*.png
+crop_detections_final.json
+detection_metrics.json
+professional_dual_drone_results.json

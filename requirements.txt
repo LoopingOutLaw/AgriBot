@@ -1,0 +1,9 @@
+dronekit>=2.9.2
+pymavlink>=2.4.41
+numpy>=1.23.0
+opencv-python>=4.8.0
+scikit-learn>=1.3.0
+scipy>=1.10.0
+rclpy>=0.15.0
+sensor-msgs>=0.10.0
+cv-bridge>=3.3.0
