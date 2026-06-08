@@ -76,7 +76,7 @@ The simulation environment contains **225 crops** arranged in a 15&times;15 grid
 | **Dual-Drone Coordination** | Scout and treatment drones operate autonomously with shared mission state via JSON detection files |
 | **Real-Time CV Detection** | OpenCV HSV color masking at 25 FPS with morphological cleanup and multi-frame voting |
 | **ML Disease Classification** | scikit-learn LogisticRegression classifier trained on empirical RGB samples from Gazebo |
-| **Sub-20cm Treatment Accuracy** | LOCAL_NED position targets bypass GPS conversion errors entirely |
+
 | **Camera Calibration** | Automatic axis-mapping calibration by hovering above a known infected crop |
 | **Duplicate Prevention** | 0.5m radius deduplication with multi-frame confidence voting (2 frames) |
 | **Nearest-Neighbor Path Planning** | Greedy TSP heuristic optimizes treatment drone visit order |
@@ -122,7 +122,6 @@ Gazebo Fortress (Simulation Environment)
                                     └── Treatment Drone
                                             │
                                             ├── Nearest-Neighbor Path Planning
-                                            ├── LOCAL_NED Position Targeting
                                             └── Per-Crop Hover & Spray
                                                     │
                                                     └── Post-Mission Report
@@ -291,23 +290,6 @@ disease_conf = probs[disease_type]             # 0.92
 
 ### Phase 4: Treatment Targeting
 
-The treatment drone uses **LOCAL_NED position targeting** for sub-20cm accuracy:
-
-**Why LOCAL_NED instead of GPS waypoints?**
-- GPS→NED conversion introduces 30-50cm error from int32 lat/lon truncation
-- LOCAL_NED bypasses GPS entirely using EKF-local position estimates
-- The EKF origin = drone's spawn position, providing sub-decimeter accuracy in SITL
-
-```python
-def _gz_to_local_ned(gz_x, gz_y, gz_z, spawn_gz, origin):
-    """Convert Gazebo world point to LOCAL_NED offset from EKF origin."""
-    sx, sy, sz = spawn_gz
-    north_m = gz_y - sy    # Gazebo +Y = North
-    east_m  = gz_x - sx    # Gazebo +X = East
-    down_m  = sz - gz_z    # Gazebo +Z = Up, NED +Z = Down
-    return north_m, east_m, down_m
-```
-
 **Treatment flight parameters** (optimized for speed between crops):
 
 ```python
@@ -320,7 +302,7 @@ TREATMENT_FLIGHT_PARAMS = {
 
 **Per-crop treatment sequence:**
 1. Compute NED offset from spawn to target crop
-2. Send `SET_POSITION_TARGET_LOCAL_NED` (position controller holds target)
+2. Send `SET_POSITION_TARGET` (position controller holds target)
 3. Poll until within 20cm horizontal tolerance
 4. Hover for 5 seconds (simulated spraying)
 5. Proceed to next crop via nearest-neighbor path
@@ -474,30 +456,6 @@ def gps_to_gz(lat, lon, alt, origin):
     return x, y, z
 ```
 
-### LOCAL_NED for Treatment (Sub-20cm Accuracy)
-
-For treatment targeting, we bypass GPS entirely and use MAVLink's `SET_POSITION_TARGET_LOCAL_NED`:
-
-```python
-def _send_local_ned_target(vehicle, north_m, east_m, down_m):
-    """Send position target in LOCAL_NED frame."""
-    msg = vehicle.message_factory.set_position_target_local_ned_encode(
-        0, 0, 0,                                    # time, sys, comp
-        mavutil.mavlink.MAV_FRAME_LOCAL_NED,
-        0x0DF8,                                     # use pos, ignore vel/acc/yaw
-        float(north_m), float(east_m), float(down_m),
-        0, 0, 0,                                    # vx, vy, vz
-        0, 0, 0,                                    # afx, afy, afz
-        current_yaw_rad, 0                          # yaw, yaw_rate
-    )
-    vehicle.send_mavlink(msg)
-```
-
-**Key advantages of LOCAL_NED:**
-- No GPS→NED conversion error (eliminates 30-50cm truncation error)
-- EKF local position is sub-decimeter accurate in SITL
-- Position controller holds target between sends
-- WPNAV routing (via `GUID_OPTIONS=64`) prevents drone falling between waypoints
 
 ---
 
@@ -813,15 +771,6 @@ def plan_nearest_neighbour(start, crops):
 
 **Time complexity**: O(n&sup2;) — acceptable for small crop counts (n ≤ 20)
 
-### Why LOCAL_NED Achieves Sub-20cm Accuracy
-
-| Method | Error Source | Typical Error |
-|--------|-----------|---------------|
-| `simple_goto` (GPS waypoints) | int32 lat/lon truncation + cos(lat) approximation | 30-50cm |
-| `SET_POSITION_TARGET_GLOBAL_INT` | Same GPS→NED conversion | 30-50cm |
-| **`SET_POSITION_TARGET_LOCAL_NED`** | **None** (direct EKF local position) | **< 20cm** |
-
-The EKF maintains a local position estimate by integrating IMU data with GPS corrections. In SITL, this local estimate is sub-decimeter accurate because there's no real sensor noise.
 
 ---
 
